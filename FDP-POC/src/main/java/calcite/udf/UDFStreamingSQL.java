@@ -40,6 +40,7 @@ public class UDFStreamingSQL {
             "     }   ]\n" +
             "}";
 
+
     public static void main(String[] args) throws SQLException {
 
         try (Connection connection =
