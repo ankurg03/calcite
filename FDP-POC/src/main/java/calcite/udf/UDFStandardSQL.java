@@ -18,11 +18,8 @@ import org.apache.calcite.sql.SqlCall;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.type.SqlTypeName;
 
-import java.io.File;
 import java.lang.reflect.Method;
-import java.net.URISyntaxException;
 import java.net.URL;
-import java.nio.file.Paths;
 import java.sql.*;
 import java.util.*;
 
