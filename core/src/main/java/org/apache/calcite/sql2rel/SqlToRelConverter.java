@@ -188,6 +188,7 @@ import java.math.BigDecimal;
 import java.util.AbstractList;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Deque;
@@ -1121,10 +1122,10 @@ public class SqlToRelConverter {
             LogicalAggregate.create(seek, ImmutableBitSet.of(), null,
                 ImmutableList.of(
                     AggregateCall.create(SqlStdOperatorTable.COUNT, false,
-                        false, ImmutableList.of(), -1, RelCollations.EMPTY,
+                        false, false, ImmutableList.of(), -1, RelCollations.EMPTY,
                         longType, null),
                     AggregateCall.create(SqlStdOperatorTable.COUNT, false,
-                        false, args, -1, RelCollations.EMPTY, longType, null)));
+                        false, false, args, -1, RelCollations.EMPTY, longType, null)));
         LogicalJoin join =
             LogicalJoin.create(bb.root, aggregate, rexBuilder.makeLiteral(true),
                 ImmutableSet.of(), JoinRelType.INNER);
@@ -1857,6 +1858,15 @@ public class SqlToRelConverter {
   private RexNode convertOver(Blackboard bb, SqlNode node) {
     SqlCall call = (SqlCall) node;
     SqlCall aggCall = call.operand(0);
+    boolean ignoreNulls = false;
+    switch (aggCall.getKind()) {
+    case IGNORE_NULLS:
+      ignoreNulls = true;
+      // fall through
+    case RESPECT_NULLS:
+      aggCall = aggCall.operand(0);
+    }
+
     SqlNode windowOrRef = call.operand(1);
     final SqlWindow window =
         validator.resolveWindow(windowOrRef, bb.scope, true);
@@ -1919,7 +1929,8 @@ public class SqlToRelConverter {
               RexWindowBound.create(window.getLowerBound(), lowerBound),
               RexWindowBound.create(window.getUpperBound(), upperBound),
               window,
-              isDistinct);
+              isDistinct,
+              ignoreNulls);
       RexNode overNode = rexAgg.accept(visitor);
 
       return overNode;
@@ -2415,6 +2426,30 @@ public class SqlToRelConverter {
     }
   }
 
+  /** Shuttle that replace outer {@link RexInputRef} with
+   * {@link RexFieldAccess}, and adjust {@code offset} to
+   * each inner {@link RexInputRef} in the lateral join
+   * condition. */
+  private static class RexAccessShuttle extends RexShuttle {
+    private final RexBuilder builder;
+    private final RexCorrelVariable rexCorrel;
+    private final BitSet varCols = new BitSet();
+
+    RexAccessShuttle(RexBuilder builder, RexCorrelVariable rexCorrel) {
+      this.builder = builder;
+      this.rexCorrel = rexCorrel;
+    }
+
+    @Override public RexNode visitInputRef(RexInputRef input) {
+      int i = input.getIndex() - rexCorrel.getType().getFieldCount();
+      if (i < 0) {
+        varCols.set(input.getIndex());
+        return builder.makeFieldAccess(rexCorrel, input.getIndex());
+      }
+      return builder.makeInputRef(input.getType(), i);
+    }
+  }
+
   protected RelNode createJoin(
       Blackboard bb,
       RelNode leftRel,
@@ -2425,13 +2460,29 @@ public class SqlToRelConverter {
 
     final CorrelationUse p = getCorrelationUse(bb, rightRel);
     if (p != null) {
-      LogicalCorrelate corr = LogicalCorrelate.create(leftRel, p.r,
-          p.id, p.requiredColumns, SemiJoinType.of(joinType));
+      RelNode innerRel = p.r;
+      ImmutableBitSet requiredCols = p.requiredColumns;
+
       if (!joinCond.isAlwaysTrue()) {
         final RelFactories.FilterFactory factory =
             RelFactories.DEFAULT_FILTER_FACTORY;
-        return factory.createFilter(corr, joinCond);
+        final RexCorrelVariable rexCorrel =
+            (RexCorrelVariable) rexBuilder.makeCorrel(
+                leftRel.getRowType(), p.id);
+        final RexAccessShuttle shuttle =
+            new RexAccessShuttle(rexBuilder, rexCorrel);
+
+        // Replace outer RexInputRef with RexFieldAccess,
+        // and push lateral join predicate into inner child
+        final RexNode newCond = joinCond.accept(shuttle);
+        innerRel = factory.createFilter(p.r, newCond);
+        requiredCols = ImmutableBitSet
+            .fromBitSet(shuttle.varCols)
+            .union(p.requiredColumns);
       }
+
+      LogicalCorrelate corr = LogicalCorrelate.create(leftRel, innerRel,
+          p.id, requiredCols, SemiJoinType.of(joinType));
       return corr;
     }
 
@@ -3618,7 +3669,7 @@ public class SqlToRelConverter {
       Blackboard bb,
       SqlIdentifier identifier) {
     // first check for reserved identifiers like CURRENT_USER
-    final SqlCall call = SqlUtil.makeCall(opTab, identifier);
+    final SqlCall call = bb.getValidator().makeNullaryCall(identifier);
     if (call != null) {
       return bb.convertExpression(call);
     }
@@ -3999,10 +4050,6 @@ public class SqlToRelConverter {
           LogicalUnion.create(unionRels, true),
           true);
     }
-
-    // REVIEW jvs 22-Jan-2004:  should I add
-    // mapScopeToLux.put(validator.getScope(values),bb.root);
-    // ?
   }
 
   //~ Inner Classes ----------------------------------------------------------
@@ -5003,21 +5050,30 @@ public class SqlToRelConverter {
     }
 
     private void translateAgg(SqlCall call) {
-      translateAgg(call, null, null, call);
+      translateAgg(call, null, null, false, call);
     }
 
     private void translateAgg(SqlCall call, SqlNode filter,
-        SqlNodeList orderList, SqlCall outerCall) {
+        SqlNodeList orderList, boolean ignoreNulls, SqlCall outerCall) {
       assert bb.agg == this;
       assert outerCall != null;
       switch (call.getKind()) {
       case FILTER:
         assert filter == null;
-        translateAgg(call.operand(0), call.operand(1), orderList, outerCall);
+        translateAgg(call.operand(0), call.operand(1), orderList, ignoreNulls,
+            outerCall);
         return;
       case WITHIN_GROUP:
         assert orderList == null;
-        translateAgg(call.operand(0), filter, call.operand(1), outerCall);
+        translateAgg(call.operand(0), filter, call.operand(1), ignoreNulls,
+            outerCall);
+        return;
+      case IGNORE_NULLS:
+        ignoreNulls = true;
+        // fall through
+      case RESPECT_NULLS:
+        translateAgg(call.operand(0), filter, orderList, ignoreNulls,
+            outerCall);
         return;
       }
       final List<Integer> args = new ArrayList<>();
@@ -5100,6 +5156,7 @@ public class SqlToRelConverter {
               aggFunction,
               distinct,
               approximate,
+              ignoreNulls,
               args,
               filterArg,
               collation,
@@ -5253,19 +5310,22 @@ public class SqlToRelConverter {
     private final RexWindowBound upperBound;
     private final SqlWindow window;
     private final boolean distinct;
+    private final boolean ignoreNulls;
 
     HistogramShuttle(
         List<RexNode> partitionKeys,
         ImmutableList<RexFieldCollation> orderKeys,
         RexWindowBound lowerBound, RexWindowBound upperBound,
         SqlWindow window,
-        boolean distinct) {
+        boolean distinct,
+        boolean ignoreNulls) {
       this.partitionKeys = partitionKeys;
       this.orderKeys = orderKeys;
       this.lowerBound = lowerBound;
       this.upperBound = upperBound;
       this.window = window;
       this.distinct = distinct;
+      this.ignoreNulls = ignoreNulls;
     }
 
     public RexNode visitCall(RexCall call) {
@@ -5322,7 +5382,8 @@ public class SqlToRelConverter {
                 window.isRows(),
                 window.isAllowPartial(),
                 false,
-                distinct);
+                distinct,
+                ignoreNulls);
 
         RexNode histogramCall =
             rexBuilder.makeCall(
@@ -5363,7 +5424,8 @@ public class SqlToRelConverter {
             window.isRows(),
             window.isAllowPartial(),
             needSum0,
-            distinct);
+            distinct,
+            ignoreNulls);
       }
     }
 

@@ -48,6 +48,7 @@ import org.apache.calcite.sql.util.ChainedSqlOperatorTable;
 import org.apache.calcite.sql.util.SqlString;
 import org.apache.calcite.sql.validate.SqlConformance;
 import org.apache.calcite.sql.validate.SqlConformanceEnum;
+import org.apache.calcite.sql.validate.SqlNameMatchers;
 import org.apache.calcite.sql.validate.SqlValidatorImpl;
 import org.apache.calcite.sql.validate.SqlValidatorScope;
 import org.apache.calcite.test.CalciteAssert;
@@ -75,7 +76,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Collections;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.TimeZone;
@@ -347,19 +347,13 @@ public abstract class SqlOperatorBaseTest {
     for (SqlOperator sqlOperator : operatorTable.getOperatorList()) {
       String operatorName = sqlOperator.getName();
       List<SqlOperator> routines = new ArrayList<>();
-      operatorTable.lookupOperatorOverloads(
-          new SqlIdentifier(operatorName, SqlParserPos.ZERO),
-          null,
-          sqlOperator.getSyntax(),
-          routines);
+      final SqlIdentifier id =
+          new SqlIdentifier(operatorName, SqlParserPos.ZERO);
+      operatorTable.lookupOperatorOverloads(id, null, sqlOperator.getSyntax(),
+          routines, SqlNameMatchers.withCaseSensitive(true));
 
-      Iterator<SqlOperator> iter = routines.iterator();
-      while (iter.hasNext()) {
-        SqlOperator operator = iter.next();
-        if (!sqlOperator.getClass().isInstance(operator)) {
-          iter.remove();
-        }
-      }
+      routines.removeIf(operator ->
+          !sqlOperator.getClass().isInstance(operator));
       assertThat(routines.size(), equalTo(1));
       assertThat(sqlOperator, equalTo(routines.get(0)));
     }
@@ -4256,7 +4250,7 @@ public abstract class SqlOperatorBaseTest {
     tester.checkScalarExact("ASCII('ABC')", "65");
     tester.checkScalarExact("ASCII(_UTF8'\u0082')", "130");
     tester.checkScalarExact("ASCII(_UTF8'\u5B57')", "23383");
-    tester.checkScalarExact("ASCII(_UTF8'Ω')", "937");
+    tester.checkScalarExact("ASCII(_UTF8'\u03a9')", "937"); // omega
     tester.checkNull("ASCII(cast(null as varchar(1)))");
   }
 
@@ -4534,7 +4528,7 @@ public abstract class SqlOperatorBaseTest {
     tester.checkString("json_depth('{}')",
             "1", "INTEGER");
     tester.checkString("json_depth('[]')",
-              "1", "INTEGER");
+            "1", "INTEGER");
     tester.checkString("json_depth('null')",
             null, "INTEGER");
     tester.checkString("json_depth(cast(null as varchar(1)))",
@@ -4542,11 +4536,111 @@ public abstract class SqlOperatorBaseTest {
     tester.checkString("json_depth('[10, true]')",
             "2", "INTEGER");
     tester.checkString("json_depth('[[], {}]')",
-              "2", "INTEGER");
+            "2", "INTEGER");
     tester.checkString("json_depth('{\"a\": [10, true]}')",
             "3", "INTEGER");
     tester.checkString("json_depth('[10, {\"a\": [[1,2]]}]')",
             "5", "INTEGER");
+  }
+
+  @Test public void testJsonLength() {
+    // no path context
+    tester.checkString("json_length('{}')",
+            "0", "INTEGER");
+    tester.checkString("json_length('[]')",
+            "0", "INTEGER");
+    tester.checkString("json_length('{\"foo\":100}')",
+            "1", "INTEGER");
+    tester.checkString("json_length('{\"a\": 1, \"b\": {\"c\": 30}}')",
+            "2", "INTEGER");
+    tester.checkString("json_length('[1, 2, {\"a\": 3}]')",
+            "3", "INTEGER");
+
+    // lax test
+    tester.checkString("json_length('{}', 'lax $')",
+            "0", "INTEGER");
+    tester.checkString("json_length('[]', 'lax $')",
+            "0", "INTEGER");
+    tester.checkString("json_length('{\"foo\":100}', 'lax $')",
+            "1", "INTEGER");
+    tester.checkString("json_length('{\"a\": 1, \"b\": {\"c\": 30}}', 'lax $')",
+            "2", "INTEGER");
+    tester.checkString("json_length('[1, 2, {\"a\": 3}]', 'lax $')",
+            "3", "INTEGER");
+    tester.checkString("json_length('{\"a\": 1, \"b\": {\"c\": 30}}', 'lax $.b')",
+            "1", "INTEGER");
+    tester.checkString("json_length('{\"foo\":100}', 'lax $.foo1')",
+            null, "INTEGER");
+
+    // strict test
+    tester.checkString("json_length('{}', 'strict $')",
+            "0", "INTEGER");
+    tester.checkString("json_length('[]', 'strict $')",
+            "0", "INTEGER");
+    tester.checkString("json_length('{\"foo\":100}', 'strict $')",
+            "1", "INTEGER");
+    tester.checkString("json_length('{\"a\": 1, \"b\": {\"c\": 30}}', 'strict $')",
+            "2", "INTEGER");
+    tester.checkString("json_length('[1, 2, {\"a\": 3}]', 'strict $')",
+            "3", "INTEGER");
+    tester.checkString("json_length('{\"a\": 1, \"b\": {\"c\": 30}}', 'strict $.b')",
+            "1", "INTEGER");
+
+    // catch error test
+    tester.checkFails("json_length('{\"foo\":100}', 'invalid $.foo')",
+            "(?s).*Illegal jsonpath spec.*", true);
+    tester.checkFails("json_length('{\"foo\":100}', 'strict $.foo1')",
+            "(?s).*No results for path.*", true);
+  }
+
+  @Test public void testJsonKeys() {
+    // no path context
+    tester.checkString("json_keys('{}')",
+            "[]", "VARCHAR(2000) NOT NULL");
+    tester.checkString("json_keys('[]')",
+            "null", "VARCHAR(2000) NOT NULL");
+    tester.checkString("json_keys('{\"foo\":100}')",
+            "[\"foo\"]", "VARCHAR(2000) NOT NULL");
+    tester.checkString("json_keys('{\"a\": 1, \"b\": {\"c\": 30}}')",
+            "[\"a\",\"b\"]", "VARCHAR(2000) NOT NULL");
+    tester.checkString("json_keys('[1, 2, {\"a\": 3}]')",
+            "null", "VARCHAR(2000) NOT NULL");
+
+    // lax test
+    tester.checkString("json_keys('{}', 'lax $')",
+            "[]", "VARCHAR(2000) NOT NULL");
+    tester.checkString("json_keys('[]', 'lax $')",
+            "null", "VARCHAR(2000) NOT NULL");
+    tester.checkString("json_keys('{\"foo\":100}', 'lax $')",
+            "[\"foo\"]", "VARCHAR(2000) NOT NULL");
+    tester.checkString("json_keys('{\"a\": 1, \"b\": {\"c\": 30}}', 'lax $')",
+            "[\"a\",\"b\"]", "VARCHAR(2000) NOT NULL");
+    tester.checkString("json_keys('[1, 2, {\"a\": 3}]', 'lax $')",
+            "null", "VARCHAR(2000) NOT NULL");
+    tester.checkString("json_keys('{\"a\": 1, \"b\": {\"c\": 30}}', 'lax $.b')",
+            "[\"c\"]", "VARCHAR(2000) NOT NULL");
+    tester.checkString("json_keys('{\"foo\":100}', 'lax $.foo1')",
+            "null", "VARCHAR(2000) NOT NULL");
+
+    // strict test
+    tester.checkString("json_keys('{}', 'strict $')",
+            "[]", "VARCHAR(2000) NOT NULL");
+    tester.checkString("json_keys('[]', 'strict $')",
+            "null", "VARCHAR(2000) NOT NULL");
+    tester.checkString("json_keys('{\"foo\":100}', 'strict $')",
+            "[\"foo\"]", "VARCHAR(2000) NOT NULL");
+    tester.checkString("json_keys('{\"a\": 1, \"b\": {\"c\": 30}}', 'strict $')",
+            "[\"a\",\"b\"]", "VARCHAR(2000) NOT NULL");
+    tester.checkString("json_keys('[1, 2, {\"a\": 3}]', 'strict $')",
+            "null", "VARCHAR(2000) NOT NULL");
+    tester.checkString("json_keys('{\"a\": 1, \"b\": {\"c\": 30}}', 'strict $.b')",
+            "[\"c\"]", "VARCHAR(2000) NOT NULL");
+
+    // catch error test
+    tester.checkFails("json_keys('{\"foo\":100}', 'invalid $.foo')",
+            "(?s).*Illegal jsonpath spec.*", true);
+    tester.checkFails("json_keys('{\"foo\":100}', 'strict $.foo1')",
+            "(?s).*No results for path.*", true);
   }
 
   @Test public void testJsonObjectAgg() {
@@ -6099,6 +6193,27 @@ public abstract class SqlOperatorBaseTest {
     tester.checkAgg("collect(DISTINCT CASE x WHEN 0 THEN NULL ELSE -1 END)",
         values, result, (double) 0);
     tester.checkAgg("collect(DISTINCT x)", values, 2, (double) 0);
+  }
+
+  @Test public void testListaggFunc() {
+    tester.setFor(SqlStdOperatorTable.LISTAGG, VM_FENNEL, VM_JAVA);
+    tester.checkFails("listagg(^*^)", "Unknown identifier '\\*'", false);
+    tester.checkFails("^listagg(12)^",
+        "Cannot apply 'LISTAGG' to arguments of type .*'\n.*'", false);
+    tester.checkFails("^listagg(cast(12 as double))^",
+        "Cannot apply 'LISTAGG' to arguments of type .*'\n.*'", false);
+    tester.checkFails("^listagg()^",
+        "Invalid number of arguments to function 'LISTAGG'. Was expecting 1 arguments",
+        false);
+    tester.checkFails("^listagg('1', '2', '3')^",
+        "Invalid number of arguments to function 'LISTAGG'. Was expecting 1 arguments",
+        false);
+    checkAggType(tester, "listagg('test')", "CHAR(4) NOT NULL");
+    checkAggType(tester, "listagg('test', ', ')", "CHAR(4) NOT NULL");
+    final String[] values1 = {"'hello'", "CAST(null AS CHAR)", "'world'", "'!'"};
+    tester.checkAgg("listagg(x)", values1, "hello,world,!", (double) 0);
+    final String[] values2 = {"0", "1", "2", "3"};
+    tester.checkAgg("listagg(cast(x as CHAR))", values2, "0,1,2,3", (double) 0);
   }
 
   @Test public void testFusionFunc() {

@@ -1084,6 +1084,50 @@ public class SqlToRelConverterTest extends SqlToRelTestBase {
     sql(sql).ok();
   }
 
+  /**
+   * Lateral join with temporal table, both snapshot's input scan
+   * and snapshot's period reference outer columns. Should not
+   * decorrelate join.
+   */
+  @Test public void testCrossJoinTemporalTable1() {
+    final String sql = "select stream *\n"
+        + "from orders\n"
+        + "cross join lateral (\n"
+        + "  select * from products_temporal for system_time\n"
+        + "  as of orders.rowtime\n"
+        + "  where orders.productid = products_temporal.productid)\n";
+    sql(sql).ok();
+  }
+
+  /**
+   * Lateral join with temporal table, snapshot's input scan
+   * reference outer columns, but snapshot's period is static.
+   * Should be able to decorrelate join.
+   */
+  @Test public void testCrossJoinTemporalTable2() {
+    final String sql = "select stream *\n"
+        + "from orders\n"
+        + "cross join lateral (\n"
+        + "  select * from products_temporal for system_time\n"
+        + "  as of TIMESTAMP '2011-01-02 00:00:00'\n"
+        + "  where orders.productid = products_temporal.productid)\n";
+    sql(sql).ok();
+  }
+
+  /**
+   * Lateral join with temporal table, snapshot's period reference
+   * outer columns. Should not decorrelate join.
+   */
+  @Test public void testCrossJoinTemporalTable3() {
+    final String sql = "select stream *\n"
+        + "from orders\n"
+        + "cross join lateral (\n"
+        + "  select * from products_temporal for system_time\n"
+        + "  as of orders.rowtime\n"
+        + "  where products_temporal.productid > 1)\n";
+    sql(sql).ok();
+  }
+
   /** Test case for
    * <a href="https://issues.apache.org/jira/browse/CALCITE-1732">[CALCITE-1732]
    * IndexOutOfBoundsException when using LATERAL TABLE with more than one
@@ -1729,6 +1773,28 @@ public class SqlToRelConverterTest extends SqlToRelTestBase {
     final String sql2 = "select last_value(deptno) over (order by empno)\n"
         + "from emp\n";
     sql(sql2).ok();
+  }
+
+  /**
+   * Tests that a window with specifying null treatment.
+   */
+  @Test public void testOverNullTreatmentWindow() {
+    final String sql = "select\n"
+        + "lead(deptno, 1) over w,\n "
+        + "lead(deptno, 2) ignore nulls over w,\n"
+        + "lead(deptno, 3) respect nulls over w,\n"
+        + "lead(deptno, 1) over w,\n"
+        + "lag(deptno, 2) ignore nulls over w,\n"
+        + "lag(deptno, 2) respect nulls over w,\n"
+        + "first_value(deptno) over w,\n"
+        + "first_value(deptno) ignore nulls over w,\n"
+        + "first_value(deptno) respect nulls over w,\n"
+        + "last_value(deptno) over w,\n"
+        + "last_value(deptno) ignore nulls over w,\n"
+        + "last_value(deptno) respect nulls over w\n"
+        + " from emp\n"
+        + "window w as (order by empno)";
+    sql(sql).ok();
   }
 
   /**
@@ -2572,6 +2638,17 @@ public class SqlToRelConverterTest extends SqlToRelTestBase {
     sql(sql).with(getTesterWithDynamicTable()).ok();
   }
 
+  /**
+   * Test case for <a href="https://issues.apache.org/jira/browse/CALCITE-2900">[CALCITE-2900]
+   * RelStructuredTypeFlattener generates wrong types on nested columns</a>.
+   */
+  @Test
+  public void testNestedColumnType() {
+    final String sql =
+        "select empa.home_address.zip from sales.emp_address empa where empa.home_address.city = 'abc'";
+    sql(sql).ok();
+  }
+
   @Test public void testDynamicSchemaUnnest() {
     final String sql3 = "select t1.c_nationkey, t3.fake_col3\n"
         + "from SALES.CUSTOMER as t1,\n"
@@ -3039,6 +3116,91 @@ public class SqlToRelConverterTest extends SqlToRelTestBase {
     final String sql = "select * from (\n"
         + "  select empno from emp order by deptno limit 10) t\n"
         + "order by empno";
+    sql(sql).ok();
+  }
+
+  /**
+   * Tests left join lateral with using
+   */
+  @Test public void testLeftJoinLateral1() {
+    final String sql = "select * from (values 4) as t(c)\n"
+        + " left join lateral\n"
+        + " (select c,a*c from (values 2) as s(a)) as r(d,c)\n"
+        + " using(c)";
+    sql(sql).ok();
+  }
+
+  /**
+   * Tests left join lateral with natural join
+   */
+  @Test public void testLeftJoinLateral2() {
+    final String sql = "select * from (values 4) as t(c)\n"
+        + " natural left join lateral\n"
+        + " (select c,a*c from (values 2) as s(a)) as r(d,c)";
+    sql(sql).ok();
+  }
+
+  /**
+   * Tests left join lateral with on condition
+   */
+  @Test public void testLeftJoinLateral3() {
+    final String sql = "select * from (values 4) as t(c)\n"
+        + " left join lateral\n"
+        + " (select c,a*c from (values 2) as s(a)) as r(d,c)\n"
+        + " on t.c=r.c";
+    sql(sql).ok();
+  }
+
+  /**
+   * Tests left join lateral with multiple columns from outer
+   */
+  @Test public void testLeftJoinLateral4() {
+    final String sql = "select * from (values (4,5)) as t(c,d)\n"
+        + " left join lateral\n"
+        + " (select c,a*c from (values 2) as s(a)) as r(d,c)\n"
+        + " on t.c+t.d=r.c";
+    sql(sql).ok();
+  }
+
+  /**
+   * Tests left join lateral with correlate variable coming
+   * from one level up join scope
+   */
+  @Test public void testLeftJoinLateral5() {
+    final String sql = "select * from (values 4) as t (c)\n"
+        + "left join lateral\n"
+        + "  (select f1+b1 from (values 2) as foo(f1)\n"
+        + "    join\n"
+        + "  (select c+1 from (values 3)) as bar(b1)\n"
+        + "  on f1=b1)\n"
+        + "as r(n) on c=n";
+    sql(sql).ok();
+  }
+
+  /**
+   * Tests cross join lateral with multiple columns from outer
+   */
+  @Test public void testCrossJoinLateral1() {
+    final String sql = "select * from (values (4,5)) as t(c,d)\n"
+        + " cross join lateral\n"
+        + " (select c,a*c as f from (values 2) as s(a)\n"
+        + " where c+d=a*c)";
+    sql(sql).ok();
+  }
+
+  /**
+   * Tests cross join lateral with correlate variable coming
+   * from one level up join scope
+   */
+  @Test public void testCrossJoinLateral2() {
+    final String sql = "select * from (values 4) as t (c)\n"
+        + "cross join lateral\n"
+        + "(select * from (\n"
+        + "  select f1+b1 from (values 2) as foo(f1)\n"
+        + "    join\n"
+        + "  (select c+1 from (values 3)) as bar(b1)\n"
+        + "  on f1=b1\n"
+        + ") as r(n) where c=n)";
     sql(sql).ok();
   }
 

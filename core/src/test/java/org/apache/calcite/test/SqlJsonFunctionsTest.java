@@ -474,7 +474,7 @@ public class SqlJsonFunctionsTest {
   public void testJsonType() {
     assertJsonType(is("OBJECT"), "{}");
     assertJsonType(is("ARRAY"),
-            "[\"foo\",null]");
+        "[\"foo\",null]");
     assertJsonType(is("NULL"), "null");
     assertJsonType(is("BOOLEAN"), "false");
     assertJsonType(is("INTEGER"), "12");
@@ -488,10 +488,49 @@ public class SqlJsonFunctionsTest {
     assertJsonDepth(is(1), "12");
     assertJsonDepth(is(1), "11.22");
     assertJsonDepth(is(2),
-            "[\"foo\",null]");
+        "[\"foo\",null]");
     assertJsonDepth(is(3),
-            "{\"a\": [10, true]}");
+        "{\"a\": [10, true]}");
     assertJsonDepth(nullValue(), "null");
+  }
+
+  @Test
+  public void testJsonLength() {
+    assertJsonLength(
+        SqlFunctions.PathContext
+            .withReturned(SqlFunctions.PathMode.LAX, Collections.singletonList("bar")),
+        is(1));
+    assertJsonLength(
+        SqlFunctions.PathContext
+            .withReturned(SqlFunctions.PathMode.LAX, null),
+        nullValue());
+    assertJsonLength(
+        SqlFunctions.PathContext
+            .withReturned(SqlFunctions.PathMode.STRICT, Collections.singletonList("bar")),
+        is(1));
+    assertJsonLength(
+        SqlFunctions.PathContext
+            .withReturned(SqlFunctions.PathMode.LAX, "bar"),
+        is(1));
+  }
+
+  public void testJsonKeys() {
+    assertJsonKeys(
+        SqlFunctions.PathContext
+            .withReturned(SqlFunctions.PathMode.LAX, Collections.singletonList("bar")),
+        is("null"));
+    assertJsonKeys(
+        SqlFunctions.PathContext
+            .withReturned(SqlFunctions.PathMode.LAX, null),
+        is("null"));
+    assertJsonKeys(
+        SqlFunctions.PathContext
+            .withReturned(SqlFunctions.PathMode.STRICT, Collections.singletonList("bar")),
+        is("null"));
+    assertJsonKeys(
+        SqlFunctions.PathContext
+            .withReturned(SqlFunctions.PathMode.LAX, "bar"),
+        is("null"));
   }
 
   @Test
@@ -667,10 +706,41 @@ public class SqlJsonFunctionsTest {
         matcher);
   }
 
+  private void assertJsonLength(Object input,
+      Matcher<? super Integer> matcher) {
+    assertThat(
+        invocationDesc(BuiltInMethod.JSON_LENGTH.getMethodName(), input),
+        SqlFunctions.jsonLength(input),
+        matcher);
+  }
+
+  private void assertJsonLengthFailed(Object input,
+      Matcher<? super Throwable> matcher) {
+    assertFailed(
+        invocationDesc(BuiltInMethod.JSON_LENGTH.getMethodName(), input),
+        () -> SqlFunctions.jsonLength(input),
+        matcher);
+  }
+
+  private void assertJsonKeys(Object input,
+      Matcher<? super String> matcher) {
+    assertThat(
+        invocationDesc(BuiltInMethod.JSON_KEYS.getMethodName(), input),
+        SqlFunctions.jsonKeys(input),
+        matcher);
+  }
+
+  private void assertJsonKeysFailed(Object input,
+      Matcher<? super Throwable> matcher) {
+    assertFailed(invocationDesc(BuiltInMethod.JSON_KEYS.getMethodName(), input),
+        () -> SqlFunctions.jsonKeys(input),
+        matcher);
+  }
+
   private void assertDejsonize(String input,
       Matcher<Object> matcher) {
     assertThat(invocationDesc(BuiltInMethod.DEJSONIZE.getMethodName(), input),
-            SqlFunctions.dejsonize(input),
+        SqlFunctions.dejsonize(input),
         matcher);
   }
 
@@ -690,21 +760,21 @@ public class SqlJsonFunctionsTest {
   }
 
   private void assertJsonType(Matcher<? super String> matcher,
-                                String input) {
+      String input) {
     assertThat(
         invocationDesc(BuiltInMethod.JSON_TYPE.getMethodName(), input),
         SqlFunctions.jsonType(
-                SqlFunctions.dejsonize(input)),
+            SqlFunctions.dejsonize(input)),
         matcher);
   }
 
   private void assertJsonDepth(Matcher<? super Integer> matcher,
-                              String input) {
+      String input) {
     assertThat(
-            invocationDesc(BuiltInMethod.JSON_DEPTH.getMethodName(), input),
-            SqlFunctions.jsonDepth(
-                    SqlFunctions.dejsonize(input)),
-            matcher);
+        invocationDesc(BuiltInMethod.JSON_DEPTH.getMethodName(), input),
+        SqlFunctions.jsonDepth(
+            SqlFunctions.dejsonize(input)),
+        matcher);
   }
 
   private void assertJsonObjectAggAdd(Map map, String k, Object v,

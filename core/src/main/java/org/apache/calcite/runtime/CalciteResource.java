@@ -43,6 +43,9 @@ public interface CalciteResource {
   @BaseMessage("APPLY operator is not allowed under the current SQL conformance level")
   ExInst<CalciteException> applyNotAllowed();
 
+  @BaseMessage("JSON path expression must be specified after the JSON value expression")
+  ExInst<CalciteException> jsonPathMustBeSpecified();
+
   @BaseMessage("Illegal {0} literal {1}: {2}")
   ExInst<CalciteException> illegalLiteral(String a0, String a1, String a2);
 
@@ -304,6 +307,9 @@ public interface CalciteResource {
 
   @BaseMessage("Window ''{0}'' not found")
   ExInst<SqlValidatorException> windowNotFound(String a0);
+
+  @BaseMessage("Cannot specify IGNORE NULLS or RESPECT NULLS following ''{0}''")
+  ExInst<SqlValidatorException> disallowsNullTreatment(String a0);
 
   @BaseMessage("Expression ''{0}'' is not being grouped")
   ExInst<SqlValidatorException> notGroupExpr(String a0);
@@ -862,14 +868,20 @@ public interface CalciteResource {
   @BaseMessage("While executing SQL [{0}] on JDBC sub-schema")
   ExInst<RuntimeException> exceptionWhilePerformingQueryOnJdbcSubSchema(String sql);
 
-  @BaseMessage("Unknown JSON type in JSON_TYPE function, and the object is: ''{0}''")
-  ExInst<CalciteException> unknownObjectOfJsonType(String value);
+  @BaseMessage("Not a valid input for JSON_TYPE: ''{0}''")
+  ExInst<CalciteException> invalidInputForJsonType(String value);
 
-  @BaseMessage("Unknown JSON depth in JSON_DEPTH function, and the object is: ''{0}''")
-  ExInst<CalciteException> unknownObjectOfJsonDepth(String value);
+  @BaseMessage("Not a valid input for JSON_DEPTH: ''{0}''")
+  ExInst<CalciteException> invalidInputForJsonDepth(String value);
 
   @BaseMessage("Cannot serialize object to JSON, and the object is: ''{0}''")
   ExInst<CalciteException> exceptionWhileSerializingToJson(String value);
+
+  @BaseMessage("Not a valid input for JSON_LENGTH: ''{0}''")
+  ExInst<CalciteException> invalidInputForJsonLength(String value);
+
+  @BaseMessage("Not a valid input for JSON_KEYS: ''{0}''")
+  ExInst<CalciteException> invalidInputForJsonKeys(String value);
 }
 
 // End CalciteResource.java

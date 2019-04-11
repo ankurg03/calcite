@@ -30,6 +30,9 @@ import org.apache.calcite.plan.hep.HepProgram;
 import org.apache.calcite.plan.hep.HepProgramBuilder;
 import org.apache.calcite.prepare.Prepare;
 import org.apache.calcite.rel.RelCollationTraitDef;
+import org.apache.calcite.rel.RelCollations;
+import org.apache.calcite.rel.RelDistributions;
+import org.apache.calcite.rel.RelFieldCollation;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelRoot;
 import org.apache.calcite.rel.core.Aggregate;
@@ -41,6 +44,7 @@ import org.apache.calcite.rel.core.Minus;
 import org.apache.calcite.rel.core.Project;
 import org.apache.calcite.rel.core.RelFactories;
 import org.apache.calcite.rel.core.Union;
+import org.apache.calcite.rel.logical.LogicalAggregate;
 import org.apache.calcite.rel.logical.LogicalCorrelate;
 import org.apache.calcite.rel.logical.LogicalProject;
 import org.apache.calcite.rel.logical.LogicalTableModify;
@@ -53,6 +57,7 @@ import org.apache.calcite.rel.rules.AggregateExpandDistinctAggregatesRule;
 import org.apache.calcite.rel.rules.AggregateExtractProjectRule;
 import org.apache.calcite.rel.rules.AggregateFilterTransposeRule;
 import org.apache.calcite.rel.rules.AggregateJoinTransposeRule;
+import org.apache.calcite.rel.rules.AggregateMergeRule;
 import org.apache.calcite.rel.rules.AggregateProjectMergeRule;
 import org.apache.calcite.rel.rules.AggregateProjectPullUpConstantsRule;
 import org.apache.calcite.rel.rules.AggregateReduceFunctionsRule;
@@ -62,6 +67,7 @@ import org.apache.calcite.rel.rules.AggregateValuesRule;
 import org.apache.calcite.rel.rules.CalcMergeRule;
 import org.apache.calcite.rel.rules.CoerceInputsRule;
 import org.apache.calcite.rel.rules.DateRangeRules;
+import org.apache.calcite.rel.rules.ExchangeRemoveConstantKeysRule;
 import org.apache.calcite.rel.rules.FilterAggregateTransposeRule;
 import org.apache.calcite.rel.rules.FilterJoinRule;
 import org.apache.calcite.rel.rules.FilterMergeRule;
@@ -133,6 +139,7 @@ import org.junit.Test;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Properties;
 import java.util.function.Predicate;
@@ -2357,6 +2364,25 @@ public class RelOptRulesTest extends RelOptTestBase {
             + " where a - b < 0");
   }
 
+  @Test public void testReduceConstantsWindow() {
+    HepProgram program = new HepProgramBuilder()
+        .addRuleInstance(ProjectToWindowRule.PROJECT)
+        .addRuleInstance(ProjectMergeRule.INSTANCE)
+        .addRuleInstance(ProjectWindowTransposeRule.INSTANCE)
+        .addRuleInstance(ReduceExpressionsRule.WINDOW_INSTANCE)
+        .build();
+
+    final String sql = "select col1, col2, col3\n"
+        + "from (\n"
+        + "  select empno,\n"
+        + "    sum(100) over (partition by deptno, sal order by sal) as col1,\n"
+        + "    sum(100) over (partition by sal order by deptno) as col2,\n"
+        + "    sum(sal) over (partition by deptno order by sal) as col3\n"
+        + "  from emp where sal = 5000)";
+
+    checkPlanning(program, sql);
+  }
+
   @Test public void testEmptyFilterProjectUnion() throws Exception {
     HepProgram program = new HepProgramBuilder()
         .addRuleInstance(FilterSetOpTransposeRule.INSTANCE)
@@ -3448,7 +3474,7 @@ public class RelOptRulesTest extends RelOptTestBase {
         + "  select n2.SAL\n"
         + "  from EMPNULLABLES_20 n2\n"
         + "  where n1.SAL = n2.SAL or n1.SAL = 4)";
-    sql(sql).withDecorrelation(true).with(program).check();
+    sql(sql).withDecorrelation(true).with(program).checkUnchanged();
   }
 
   /** Test case for
@@ -3617,6 +3643,176 @@ public class RelOptRulesTest extends RelOptTestBase {
     final String sql =
             "select count(distinct sal) from sales.emp join sales.dept on job = name";
     checkPlanUnchanged(new HepPlanner(program), sql);
+  }
+
+  /**
+   * Test case for AggregateMergeRule, should merge 2 aggregates
+   * into a single aggregate.
+   */
+  @Test public void testAggregateMerge1() {
+    final HepProgram preProgram = new HepProgramBuilder()
+        .addRuleInstance(AggregateProjectMergeRule.INSTANCE)
+        .addRuleInstance(ProjectMergeRule.INSTANCE)
+        .build();
+    final HepProgram program = new HepProgramBuilder()
+        .addRuleInstance(AggregateProjectMergeRule.INSTANCE)
+        .addRuleInstance(AggregateMergeRule.INSTANCE)
+        .build();
+    final String sql = "select deptno c, min(y), max(z) z,\n"
+        + "sum(r), sum(m) n, sum(x) sal from (\n"
+        + "   select deptno, ename, sum(sal) x, max(sal) z,\n"
+        + "      min(sal) y, count(hiredate) m, count(mgr) r\n"
+        + "   from sales.emp group by deptno, ename) t\n"
+        + "group by deptno";
+    checkPlanning(tester, preProgram, new HepPlanner(program), sql);
+  }
+
+  /**
+   * Test case for AggregateMergeRule, should merge 2 aggregates
+   * into a single aggregate, top aggregate is not simple aggregate.
+   */
+  @Test public void testAggregateMerge2() {
+    final HepProgram preProgram = new HepProgramBuilder()
+        .addRuleInstance(AggregateProjectMergeRule.INSTANCE)
+        .addRuleInstance(ProjectMergeRule.INSTANCE)
+        .build();
+    final HepProgram program = new HepProgramBuilder()
+        .addRuleInstance(AggregateProjectMergeRule.INSTANCE)
+        .addRuleInstance(AggregateMergeRule.INSTANCE)
+        .build();
+    final String sql = "select deptno, empno, sum(x), sum(y)\n"
+        + "from (\n"
+        + "  select ename, empno, deptno, sum(sal) x, count(mgr) y\n"
+        + "    from sales.emp\n"
+        + "  group by deptno, ename, empno) t\n"
+        + "group by grouping sets(deptno, empno)";
+    checkPlanning(tester, preProgram, new HepPlanner(program), sql);
+  }
+
+  /**
+   * Test case for AggregateMergeRule, should not merge 2 aggregates
+   * into a single aggregate, since lower aggregate is not simple aggregate.
+   */
+  @Test public void testAggregateMerge3() {
+    final HepProgram preProgram = new HepProgramBuilder()
+        .addRuleInstance(AggregateProjectMergeRule.INSTANCE)
+        .addRuleInstance(ProjectMergeRule.INSTANCE)
+        .build();
+    final HepProgram program = new HepProgramBuilder()
+        .addRuleInstance(AggregateProjectMergeRule.INSTANCE)
+        .addRuleInstance(AggregateMergeRule.INSTANCE)
+        .build();
+    final String sql = "select deptno, sum(x) from (\n"
+        + " select ename, deptno, sum(sal) x from\n"
+        + "   sales.emp group by cube(deptno, ename)) t\n"
+        + "group by deptno";
+    sql(sql).withPre(preProgram).with(program)
+        .checkUnchanged();
+  }
+
+  /**
+   * Test case for AggregateMergeRule, should not merge 2 aggregates
+   * into a single aggregate, since it contains distinct aggregate
+   * function.
+   */
+  @Test public void testAggregateMerge4() {
+    final HepProgram preProgram = new HepProgramBuilder()
+        .addRuleInstance(AggregateProjectMergeRule.INSTANCE)
+        .addRuleInstance(ProjectMergeRule.INSTANCE)
+        .build();
+    final HepProgram program = new HepProgramBuilder()
+        .addRuleInstance(AggregateProjectMergeRule.INSTANCE)
+        .addRuleInstance(AggregateMergeRule.INSTANCE)
+        .build();
+    final String sql = "select deptno, sum(x) from (\n"
+        + "  select ename, deptno, count(distinct sal) x\n"
+        + "    from sales.emp group by deptno, ename) t\n"
+        + "group by deptno";
+    sql(sql).withPre(preProgram).with(program)
+        .checkUnchanged();
+  }
+
+  /**
+   * Test case for AggregateMergeRule, should not merge 2 aggregates
+   * into a single aggregate, since AVG doesn't support splitting.
+   */
+  @Test public void testAggregateMerge5() {
+    final HepProgram preProgram = new HepProgramBuilder()
+        .addRuleInstance(AggregateProjectMergeRule.INSTANCE)
+        .addRuleInstance(ProjectMergeRule.INSTANCE)
+        .build();
+    final HepProgram program = new HepProgramBuilder()
+        .addRuleInstance(AggregateProjectMergeRule.INSTANCE)
+        .addRuleInstance(AggregateMergeRule.INSTANCE)
+        .build();
+    final String sql = "select deptno, avg(x) from (\n"
+        + "  select mgr, deptno, avg(sal) x from\n"
+        + "    sales.emp group by deptno, mgr) t\n"
+        + "group by deptno";
+    sql(sql).withPre(preProgram).with(program)
+        .checkUnchanged();
+  }
+
+  /**
+   * Test case for AggregateMergeRule, should not merge 2 aggregates
+   * into a single aggregate, since top agg has no group key, and
+   * lower agg function is COUNT.
+   */
+  @Test public void testAggregateMerge6() {
+    final HepProgram preProgram = new HepProgramBuilder()
+        .addRuleInstance(AggregateProjectMergeRule.INSTANCE)
+        .addRuleInstance(ProjectMergeRule.INSTANCE)
+        .build();
+    final HepProgram program = new HepProgramBuilder()
+        .addRuleInstance(AggregateProjectMergeRule.INSTANCE)
+        .addRuleInstance(AggregateMergeRule.INSTANCE)
+        .build();
+    final String sql = "select sum(x) from (\n"
+        + "select mgr, deptno, count(sal) x from\n"
+        + "sales.emp group by deptno, mgr) t";
+    sql(sql).withPre(preProgram).with(program)
+        .checkUnchanged();
+  }
+
+  /**
+   * Test case for AggregateMergeRule, should not merge 2 aggregates
+   * into a single aggregate, since top agg contains empty grouping set,
+   * and lower agg function is COUNT.
+   */
+  @Test public void testAggregateMerge7() {
+    final HepProgram preProgram = new HepProgramBuilder()
+        .addRuleInstance(AggregateProjectMergeRule.INSTANCE)
+        .addRuleInstance(ProjectMergeRule.INSTANCE)
+        .build();
+    final HepProgram program = new HepProgramBuilder()
+        .addRuleInstance(AggregateProjectMergeRule.INSTANCE)
+        .addRuleInstance(AggregateMergeRule.INSTANCE)
+        .build();
+    final String sql = "select mgr, deptno, sum(x) from (\n"
+        + "  select mgr, deptno, count(sal) x from\n"
+        + "    sales.emp group by deptno, mgr) t\n"
+        + "group by cube(mgr, deptno)";
+    sql(sql).withPre(preProgram).with(program)
+        .checkUnchanged();
+  }
+
+  /**
+   * Test case for AggregateMergeRule, should merge 2 aggregates
+   * into a single aggregate, since both top and bottom aggregates
+   * contains empty grouping set and they are mergable.
+   */
+  @Test public void testAggregateMerge8() {
+    final HepProgram preProgram = new HepProgramBuilder()
+        .addRuleInstance(AggregateProjectMergeRule.INSTANCE)
+        .addRuleInstance(ProjectMergeRule.INSTANCE)
+        .build();
+    final HepProgram program = new HepProgramBuilder()
+        .addRuleInstance(AggregateProjectMergeRule.INSTANCE)
+        .addRuleInstance(AggregateMergeRule.INSTANCE)
+        .build();
+    final String sql = "select sum(x) x, min(y) z from (\n"
+        + "  select sum(sal) x, min(sal) y from sales.emp)";
+    checkPlanning(tester, preProgram, new HepPlanner(program), sql);
   }
 
   @Test public void testSwapOuterJoin() {
@@ -3873,6 +4069,15 @@ public class RelOptRulesTest extends RelOptTestBase {
         + "  (select deptno from sales.emp where empno < 20) as d\n"
         + "from sales.emp";
     checkSubQuery(sql).check();
+  }
+
+  @Test public void testSelectNotInCorrelated() {
+    final String sql = "select sal, \n"
+        + " empno NOT IN (\n"
+        + " select deptno from dept \n"
+        + "   where emp.job=dept.name) \n"
+        + " from emp";
+    checkSubQuery(sql).withLateDecorrelation(true).check();
   }
 
   /** Test case for
@@ -4292,6 +4497,117 @@ public class RelOptRulesTest extends RelOptTestBase {
     checkPlanning(program, sql);
   }
 
+  @Test public void testExchangeRemoveConstantKeysRule() {
+    final DiffRepository diffRepos = getDiffRepos();
+    final RelBuilder builder = RelBuilder.create(RelBuilderTest.config().build());
+    RelNode root = builder
+        .scan("EMP")
+        .filter(
+            builder.call(SqlStdOperatorTable.EQUALS,
+                builder.field("EMPNO"), builder.literal(10)))
+        .exchange(RelDistributions.hash(ImmutableList.of(0)))
+        .project(builder.field(0), builder.field(1))
+        .sortExchange(RelDistributions.hash(ImmutableList.of(0, 1)),
+            RelCollations.of(new RelFieldCollation(0), new RelFieldCollation(1)))
+        .build();
+
+    HepProgram preProgram = new HepProgramBuilder().build();
+    HepPlanner prePlanner = new HepPlanner(preProgram);
+    prePlanner.setRoot(root);
+    final RelNode relBefore = prePlanner.findBestExp();
+    final String planBefore = NL + RelOptUtil.toString(relBefore);
+    diffRepos.assertEquals("planBefore", "${planBefore}", planBefore);
+
+    HepProgram hepProgram = new HepProgramBuilder()
+        .addRuleInstance(ExchangeRemoveConstantKeysRule.EXCHANGE_INSTANCE)
+        .addRuleInstance(ExchangeRemoveConstantKeysRule.SORT_EXCHANGE_INSTANCE)
+        .build();
+
+    HepPlanner hepPlanner = new HepPlanner(hepProgram);
+    hepPlanner.setRoot(root);
+    final RelNode relAfter = hepPlanner.findBestExp();
+    final String planAfter = NL + RelOptUtil.toString(relAfter);
+    diffRepos.assertEquals("planAfter", "${planAfter}", planAfter);
+  }
+
+  @Test public void testReduceAverageWithNoReduceSum() {
+    final EnumSet<SqlKind> functionsToReduce = EnumSet.of(SqlKind.AVG);
+    checkPlanning(
+        new AggregateReduceFunctionsRule(
+          LogicalAggregate.class, RelFactories.LOGICAL_BUILDER,
+            functionsToReduce),
+                  "select name, max(name), avg(deptno), min(name)"
+                          + " from sales.dept group by name");
+  }
+
+  @Test public void testNoReduceAverage() {
+    final EnumSet<SqlKind> functionsToReduce = EnumSet.noneOf(SqlKind.class);
+    HepProgram program = new HepProgramBuilder()
+        .addRuleInstance(
+          new AggregateReduceFunctionsRule(LogicalAggregate.class,
+            RelFactories.LOGICAL_BUILDER, functionsToReduce))
+        .build();
+    String sql = "select name, max(name), avg(deptno), min(name)"
+        + " from sales.dept group by name";
+    sql(sql).with(program).checkUnchanged();
+  }
+
+  @Test public void testNoReduceSum() {
+    final EnumSet<SqlKind> functionsToReduce = EnumSet.noneOf(SqlKind.class);
+    HepProgram program = new HepProgramBuilder()
+            .addRuleInstance(
+              new AggregateReduceFunctionsRule(LogicalAggregate.class,
+                RelFactories.LOGICAL_BUILDER, functionsToReduce))
+            .build();
+    String sql = "select name, sum(deptno)"
+            + " from sales.dept group by name";
+    sql(sql).with(program).checkUnchanged();
+  }
+
+  @Test public void testReduceAverageAndVarWithNoReduceStddev() {
+    // configure rule to reduce AVG and VAR_POP functions
+    // other functions like SUM, STDDEV won't be reduced
+    final EnumSet<SqlKind> functionsToReduce = EnumSet.of(SqlKind.AVG, SqlKind.VAR_POP);
+    HepProgram program = new HepProgramBuilder()
+        .addRuleInstance(
+         new AggregateReduceFunctionsRule(LogicalAggregate.class,
+           RelFactories.LOGICAL_BUILDER, functionsToReduce))
+        .build();
+    final String sql = "select name, stddev_pop(deptno), avg(deptno),"
+        + " var_pop(deptno)\n"
+        + "from sales.dept group by name";
+    sql(sql).with(program).check();
+  }
+
+  @Test public void testReduceAverageAndSumWithNoReduceStddevAndVar() {
+    // configure rule to reduce AVG and SUM functions
+    // other functions like VAR_POP, STDDEV_POP won't be reduced
+    final EnumSet<SqlKind> functionsToReduce = EnumSet.of(SqlKind.AVG, SqlKind.SUM);
+    HepProgram program = new HepProgramBuilder()
+        .addRuleInstance(
+          new AggregateReduceFunctionsRule(LogicalAggregate.class,
+            RelFactories.LOGICAL_BUILDER, functionsToReduce))
+        .build();
+    final String sql = "select name, stddev_pop(deptno), avg(deptno),"
+        + " var_pop(deptno)\n"
+        + "from sales.dept group by name";
+    sql(sql).with(program).check();
+  }
+
+  @Test public void testReduceAllAggregateFunctions() {
+    // configure rule to reduce all used functions
+    final EnumSet<SqlKind> functionsToReduce = EnumSet.of(SqlKind.AVG, SqlKind.SUM,
+        SqlKind.STDDEV_POP, SqlKind.STDDEV_SAMP, SqlKind.VAR_POP, SqlKind.VAR_SAMP);
+    HepProgram program = new HepProgramBuilder()
+        .addRuleInstance(
+          new AggregateReduceFunctionsRule(LogicalAggregate.class,
+            RelFactories.LOGICAL_BUILDER, functionsToReduce))
+        .build();
+    final String sql = "select name, stddev_pop(deptno), avg(deptno),"
+        + " stddev_samp(deptno), var_pop(deptno), var_samp(deptno)\n"
+        + "from sales.dept group by name";
+    sql(sql).with(program).check();
+  }
 }
 
 // End RelOptRulesTest.java

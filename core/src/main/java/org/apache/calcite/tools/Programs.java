@@ -194,6 +194,12 @@ public class Programs {
         list.add(metadataProvider);
       }
       hepPlanner.registerMetadataProviders(list);
+      for (RelOptMaterialization materialization : materializations) {
+        hepPlanner.addMaterialization(materialization);
+      }
+      for (RelOptLattice lattice : lattices) {
+        hepPlanner.addLattice(lattice);
+      }
       RelMetadataProvider plannerChain =
           ChainedRelMetadataProvider.of(list);
       rel.getCluster().setMetadataProvider(plannerChain);
@@ -266,8 +272,8 @@ public class Programs {
   }
 
   public static Program getProgram() {
-    return (planner, rel, requiredOutputTraits, materializations, lattices)
-        -> null;
+    return (planner, rel, requiredOutputTraits, materializations, lattices) ->
+        null;
   }
 
   /** Returns the standard program used by Prepare. */

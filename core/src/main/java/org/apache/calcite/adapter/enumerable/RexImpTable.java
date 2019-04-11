@@ -162,10 +162,13 @@ import static org.apache.calcite.sql.fun.SqlStdOperatorTable.IS_NULL;
 import static org.apache.calcite.sql.fun.SqlStdOperatorTable.IS_TRUE;
 import static org.apache.calcite.sql.fun.SqlStdOperatorTable.ITEM;
 import static org.apache.calcite.sql.fun.SqlStdOperatorTable.JSON_API_COMMON_SYNTAX;
+import static org.apache.calcite.sql.fun.SqlStdOperatorTable.JSON_API_COMMON_SYNTAX_WITHOUT_PATH;
 import static org.apache.calcite.sql.fun.SqlStdOperatorTable.JSON_ARRAY;
 import static org.apache.calcite.sql.fun.SqlStdOperatorTable.JSON_ARRAYAGG;
 import static org.apache.calcite.sql.fun.SqlStdOperatorTable.JSON_DEPTH;
 import static org.apache.calcite.sql.fun.SqlStdOperatorTable.JSON_EXISTS;
+import static org.apache.calcite.sql.fun.SqlStdOperatorTable.JSON_KEYS;
+import static org.apache.calcite.sql.fun.SqlStdOperatorTable.JSON_LENGTH;
 import static org.apache.calcite.sql.fun.SqlStdOperatorTable.JSON_OBJECT;
 import static org.apache.calcite.sql.fun.SqlStdOperatorTable.JSON_OBJECTAGG;
 import static org.apache.calcite.sql.fun.SqlStdOperatorTable.JSON_PRETTY;
@@ -181,6 +184,7 @@ import static org.apache.calcite.sql.fun.SqlStdOperatorTable.LEAD;
 import static org.apache.calcite.sql.fun.SqlStdOperatorTable.LESS_THAN;
 import static org.apache.calcite.sql.fun.SqlStdOperatorTable.LESS_THAN_OR_EQUAL;
 import static org.apache.calcite.sql.fun.SqlStdOperatorTable.LIKE;
+import static org.apache.calcite.sql.fun.SqlStdOperatorTable.LISTAGG;
 import static org.apache.calcite.sql.fun.SqlStdOperatorTable.LN;
 import static org.apache.calcite.sql.fun.SqlStdOperatorTable.LOCALTIME;
 import static org.apache.calcite.sql.fun.SqlStdOperatorTable.LOCALTIMESTAMP;
@@ -254,6 +258,8 @@ public class RexImpTable {
       Expressions.constant(false);
   public static final ConstantExpression TRUE_EXPR =
       Expressions.constant(true);
+  public static final ConstantExpression COMMA_EXPR =
+      Expressions.constant(",");
   public static final MemberExpression BOXED_FALSE_EXPR =
       Expressions.field(null, Boolean.class, "FALSE");
   public static final MemberExpression BOXED_TRUE_EXPR =
@@ -454,7 +460,9 @@ public class RexImpTable {
     defineMethod(JSON_STRUCTURED_VALUE_EXPRESSION,
         BuiltInMethod.JSON_STRUCTURED_VALUE_EXPRESSION.method, NullPolicy.STRICT);
     defineMethod(JSON_API_COMMON_SYNTAX, BuiltInMethod.JSON_API_COMMON_SYNTAX.method,
-        NullPolicy.NONE);
+            NullPolicy.NONE);
+    defineMethod(JSON_API_COMMON_SYNTAX_WITHOUT_PATH,
+        BuiltInMethod.JSON_API_COMMON_SYNTAX_WITHOUT_PATH.method, NullPolicy.NONE);
     defineMethod(JSON_EXISTS, BuiltInMethod.JSON_EXISTS.method, NullPolicy.NONE);
     defineMethod(JSON_VALUE_ANY, BuiltInMethod.JSON_VALUE_ANY.method, NullPolicy.NONE);
     defineMethod(JSON_QUERY, BuiltInMethod.JSON_QUERY.method, NullPolicy.NONE);
@@ -462,7 +470,9 @@ public class RexImpTable {
     defineMethod(JSON_ARRAY, BuiltInMethod.JSON_ARRAY.method, NullPolicy.NONE);
     defineMethod(JSON_TYPE, BuiltInMethod.JSON_TYPE.method, NullPolicy.NONE);
     defineMethod(JSON_DEPTH, BuiltInMethod.JSON_DEPTH.method, NullPolicy.NONE);
+    defineMethod(JSON_KEYS, BuiltInMethod.JSON_KEYS.method, NullPolicy.NONE);
     defineMethod(JSON_PRETTY, BuiltInMethod.JSON_PRETTY.method, NullPolicy.NONE);
+    defineMethod(JSON_LENGTH, BuiltInMethod.JSON_LENGTH.method, NullPolicy.NONE);
     aggMap.put(JSON_OBJECTAGG.with(SqlJsonConstructorNullClause.ABSENT_ON_NULL),
         JsonObjectAggImplementor
             .supplierFor(BuiltInMethod.JSON_OBJECTAGG_ADD.method));
@@ -528,6 +538,7 @@ public class RexImpTable {
     aggMap.put(BIT_OR, bitop);
     aggMap.put(SINGLE_VALUE, constructorSupplier(SingleValueImplementor.class));
     aggMap.put(COLLECT, constructorSupplier(CollectImplementor.class));
+    aggMap.put(LISTAGG, constructorSupplier(ListaggImplementor.class));
     aggMap.put(FUSION, constructorSupplier(FusionImplementor.class));
     final Supplier<GroupingImplementor> grouping =
         constructorSupplier(GroupingImplementor.class);
@@ -1360,6 +1371,31 @@ public class RexImpTable {
               Expressions.call(add.accumulator().get(0),
                   BuiltInMethod.COLLECTION_ADD.method,
                   add.arguments().get(0))));
+    }
+  }
+
+  /** Implementor for the {@code LISTAGG} aggregate function. */
+  static class ListaggImplementor extends StrictAggImplementor {
+    @Override protected void implementNotNullReset(AggContext info,
+        AggResetContext reset) {
+      reset.currentBlock().add(
+          Expressions.statement(
+              Expressions.assign(reset.accumulator().get(0), NULL_EXPR)));
+    }
+
+    @Override public void implementNotNullAdd(AggContext info,
+        AggAddContext add) {
+      final Expression accValue = add.accumulator().get(0);
+      final Expression arg0 = add.arguments().get(0);
+      final Expression arg1 = add.arguments().size() == 2
+          ? add.arguments().get(1) : COMMA_EXPR;
+      final Expression result = Expressions.condition(
+          Expressions.equal(NULL_EXPR, accValue),
+          arg0,
+          Expressions.call(BuiltInMethod.STRING_CONCAT.method, accValue,
+              Expressions.call(BuiltInMethod.STRING_CONCAT.method, arg1, arg0)));
+
+      add.currentBlock().add(Expressions.statement(Expressions.assign(accValue, result)));
     }
   }
 

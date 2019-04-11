@@ -32,6 +32,7 @@ import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlLateralOperator;
 import org.apache.calcite.sql.SqlLiteral;
 import org.apache.calcite.sql.SqlNode;
+import org.apache.calcite.sql.SqlNullTreatmentOperator;
 import org.apache.calcite.sql.SqlNumericLiteral;
 import org.apache.calcite.sql.SqlOperandCountRange;
 import org.apache.calcite.sql.SqlOperator;
@@ -1170,6 +1171,14 @@ public class SqlStdOperatorTable extends ReflectiveSqlOperatorTable {
   //-------------------------------------------------------------
   public static final SqlRowOperator ROW = new SqlRowOperator("ROW");
 
+  /** <code>IGNORE NULLS</code> operator. */
+  public static final SqlNullTreatmentOperator IGNORE_NULLS =
+      new SqlNullTreatmentOperator(SqlKind.IGNORE_NULLS);
+
+  /** <code>RESPECT NULLS</code> operator. */
+  public static final SqlNullTreatmentOperator RESPECT_NULLS =
+      new SqlNullTreatmentOperator(SqlKind.RESPECT_NULLS);
+
   /**
    * A special operator for the subtraction of two DATETIMEs. The format of
    * DATETIME subtraction is:
@@ -1290,12 +1299,17 @@ public class SqlStdOperatorTable extends ReflectiveSqlOperatorTable {
           true);
 
   public static final SqlJsonApiCommonSyntaxOperator JSON_API_COMMON_SYNTAX =
-      new SqlJsonApiCommonSyntaxOperator();
+      new SqlJsonApiCommonSyntaxOperator("JSON_API_COMMON_SYNTAX", true);
+
+  public static final SqlJsonApiCommonSyntaxOperator JSON_API_COMMON_SYNTAX_WITHOUT_PATH =
+      new SqlJsonApiCommonSyntaxOperator("JSON_API_COMMON_SYNTAX_WITHOUT_PATH", false);
 
   public static final SqlFunction JSON_EXISTS = new SqlJsonExistsFunction();
 
   public static final SqlFunction JSON_VALUE =
       new SqlJsonValueFunction("JSON_VALUE", false);
+
+  public static final SqlFunction JSON_KEYS = new SqlJsonKeysFunction();
 
   public static final SqlFunction JSON_PRETTY =
           new SqlJsonPrettyFunction();
@@ -1310,6 +1324,8 @@ public class SqlStdOperatorTable extends ReflectiveSqlOperatorTable {
   public static final SqlFunction JSON_TYPE = new SqlJsonTypeFunction();
 
   public static final SqlFunction JSON_DEPTH = new SqlJsonDepthFunction();
+
+  public static final SqlFunction JSON_LENGTH = new SqlJsonLengthFunction();
 
   public static final SqlJsonObjectAggAggFunction JSON_OBJECTAGG =
       new SqlJsonObjectAggAggFunction(SqlKind.JSON_OBJECTAGG,
@@ -2138,6 +2154,20 @@ public class SqlStdOperatorTable extends ReflectiveSqlOperatorTable {
           ReturnTypes.TO_MULTISET,
           null,
           OperandTypes.ANY,
+          SqlFunctionCategory.SYSTEM, false, false,
+          Optionality.OPTIONAL) {
+      };
+
+  /**
+   * The LISTAGG operator. Multiset aggregator function.
+   */
+  public static final SqlAggFunction LISTAGG =
+      new SqlAggFunction("LISTAGG",
+          null,
+          SqlKind.LISTAGG,
+          ReturnTypes.ARG0_NULLABLE,
+          null,
+          OperandTypes.or(OperandTypes.STRING, OperandTypes.STRING_STRING),
           SqlFunctionCategory.SYSTEM, false, false,
           Optionality.OPTIONAL) {
       };
