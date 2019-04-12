@@ -154,7 +154,7 @@ public class CalciteRemoteDriverTest {
     localConnection = CalciteAssert.hr().connect();
 
     // Make sure we pick an ephemeral port for the server
-    start = Main.start(new String[]{Factory.class.getName()}, 0,
+    start = Main.start(new String[]{Factory.class.getName()}, 1,
         AvaticaJsonHandler::new);
   }
 

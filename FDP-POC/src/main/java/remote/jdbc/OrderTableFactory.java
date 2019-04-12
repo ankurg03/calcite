@@ -1,4 +1,4 @@
-package planner.examples;
+package remote.jdbc;
 
 import com.google.common.collect.ImmutableList;
 import org.apache.calcite.DataContext;

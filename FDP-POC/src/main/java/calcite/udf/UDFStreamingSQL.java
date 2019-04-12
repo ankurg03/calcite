@@ -49,26 +49,8 @@ public class UDFStreamingSQL {
                     CalciteConnection.class);
 
             streamBasicTest(calciteConnection);
-            streamScallerTest(calciteConnection);
+//            streamScallerTest(calciteConnection);
         }
-    }
-
-
-    private static void streamScallerTest(CalciteConnection calciteConnection) throws SQLException {
-        SchemaPlus rootSchema = calciteConnection.getRootSchema();
-        SchemaPlus streamSchema = rootSchema.getSubSchema("com.org.namespace.name");
-
-
-        streamSchema.add("SQUARE_TEST",
-                ScalarFunctionImpl.create(SquareUDF.class, "eval"));
-
-        String sql = "select stream STREAMS.SQUARE_TEST(UNITS) AS SQR_OF_UNIT from STREAMS.ORDERS";
-
-        final PreparedStatement statement =
-                calciteConnection.prepareStatement(sql);
-
-        ResultSet rs = statement.executeQuery();
-        printResult(rs);
     }
 
     private static void streamBasicTest(CalciteConnection calciteConnection) throws SQLException {

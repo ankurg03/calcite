@@ -1,5 +1,6 @@
 package planner.examples;
 
+import calcite.udf.UDFStreamingSQL;
 import org.apache.calcite.config.Lex;
 import org.apache.calcite.jdbc.CalciteConnection;
 import org.apache.calcite.model.ModelHandler;
@@ -17,9 +18,7 @@ import org.apache.calcite.sql.parser.SqlParser;
 import org.apache.calcite.tools.*;
 
 import java.io.IOException;
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.SQLException;
+import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
@@ -116,8 +115,8 @@ public class SamplePlanner {
             SchemaPlus rootSchema = calciteConnection.getRootSchema();
 
             SamplePlanner queryPlanner = new SamplePlanner(rootSchema);
-            testSimpleQuery(queryPlanner);
-
+            testSimpleQueryPlanner(queryPlanner);
+            testQueryExecution(calciteConnection, rootSchema);
 
         } catch (SQLException e) {
             e.printStackTrace();
@@ -128,10 +127,18 @@ public class SamplePlanner {
         } catch (IOException e) {
             e.printStackTrace();
         }
-
     }
 
-    private static void testSimpleQuery(SamplePlanner queryPlanner) throws ValidationException, RelConversionException {
+    private static void testQueryExecution(CalciteConnection calciteConnection, SchemaPlus rootSchema)
+            throws SQLException {
+        final String sql = "select * from STREAMS.ORDERS";
+        final PreparedStatement statement =
+                calciteConnection.prepareStatement(sql);
+        ResultSet rs = statement.executeQuery();
+        printResult(rs);
+    }
+
+    private static void testSimpleQueryPlanner(SamplePlanner queryPlanner) throws ValidationException, RelConversionException {
         final String sql = "select id, product from Streams.ORDERS where product = 'paint'";
         RelNode loginalPlan = queryPlanner.getLogicalPlan(sql);
         System.out.println(RelOptUtil.toString(loginalPlan));
@@ -141,4 +148,20 @@ public class SamplePlanner {
          *     LogicalTableScan(table=[[STREAMS, ORDERS]])
          */
     }
+
+    private static void printResult(ResultSet rs) throws SQLException {
+        for(int i = 1 ; i <=  rs.getMetaData().getColumnCount(); i++) {
+            System.out.print(rs.getMetaData().getColumnLabel(i) + "  ");
+        }
+        System.out.println();
+
+        while (rs.next()) {
+            for(int i = 1 ; i <=  rs.getMetaData().getColumnCount(); i++) {
+                System.out.print(rs.getString(i) + "  ");
+            }
+            System.out.println();
+        }
+        System.out.println();
+    }
+
 }

@@ -19,6 +19,10 @@
             <groupId>org.apache.calcite</groupId>
             <artifactId>calcite-example-csv</artifactId>
         </dependency>
+        <dependency>
+            <groupId>org.apache.calcite.avatica</groupId>
+            <artifactId>avatica-server</artifactId>
+        </dependency>
     </dependencies>
 
 
