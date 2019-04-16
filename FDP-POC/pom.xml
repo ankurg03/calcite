@@ -23,6 +23,18 @@
             <groupId>org.apache.calcite.avatica</groupId>
             <artifactId>avatica-server</artifactId>
         </dependency>
+        <!--<dependency>-->
+            <!--<groupId>org.scala-lang</groupId>-->
+            <!--<artifactId>scala-library</artifactId>-->
+            <!--<version>2.11.8</version>-->
+        <!--</dependency>-->
+        <dependency>
+            <groupId>org.apache.calcite</groupId>
+            <artifactId>fdp-scala-converter</artifactId>
+            <version>1.20.0-SNAPSHOT</version>
+            <scope>compile</scope>
+        </dependency>
+
     </dependencies>
 
 

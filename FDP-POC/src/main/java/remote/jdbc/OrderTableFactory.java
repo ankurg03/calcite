@@ -16,6 +16,7 @@ import org.apache.calcite.sql.type.SqlTypeName;
 import java.util.Map;
 
 public class OrderTableFactory implements TableFactory<Table> {
+
     @Override
     public Table create(SchemaPlus schema, String name, Map<String, Object> operand, RelDataType rowType) {
         return new OrdersTable();

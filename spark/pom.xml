@@ -50,6 +50,12 @@ limitations under the License.
       <artifactId>calcite-linq4j</artifactId>
     </dependency>
 
+    <!--<dependency>-->
+      <!--<groupId>com.fasterxml.jackson.module</groupId>-->
+      <!--<artifactId>jackson-module-scala_2.11</artifactId>-->
+      <!--<version>2.9.8</version>-->
+    <!--</dependency>-->
+
     <dependency>
       <groupId>com.google.guava</groupId>
       <artifactId>guava</artifactId>

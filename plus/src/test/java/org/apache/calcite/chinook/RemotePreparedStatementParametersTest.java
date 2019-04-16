@@ -53,7 +53,7 @@ public class RemotePreparedStatementParametersTest {
             "select * from chinook.track where name = ? or milliseconds > ?");
     pS.setString(1, "AC/DC");
     pS.setInt(2, 10);
-    // then
+    // thenx
     ResultSet resultSet = pS.executeQuery();
     server.stop();
   }

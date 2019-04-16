@@ -1,5 +1,6 @@
 package remote.jdbc;
 
+import fdp.javattoscala.converter.RelNodeToRDD;
 import org.apache.calcite.avatica.Meta;
 import org.apache.calcite.avatica.jdbc.JdbcMeta;
 import org.apache.calcite.avatica.server.AvaticaProtobufHandler;
@@ -43,14 +44,16 @@ public class MyJdbcServer {
                 "}";
 
         private static JdbcMeta instance = null;
+
+
         private static JdbcMeta getInstance() {
             if (instance == null) {
                 Properties info = new Properties();
                 info.setProperty("lex", "JAVA");
                 info.setProperty("model", "inline:" + model);
                 try {
-                    instance = new JdbcMeta("jdbc:calcite:",
-                            info);
+                    instance = new MyMeta("jdbc:calcite:",
+                            info) {};
                 } catch (SQLException e) {
                     throw new RuntimeException(e);
                 }
@@ -59,6 +62,20 @@ public class MyJdbcServer {
         }
         @Override public Meta create(List<String> args) {
             return getInstance();
+        }
+    }
+
+    public static class MyMeta extends JdbcMeta {
+
+        public MyMeta(String url, Properties info) throws SQLException {
+            super(url, info);
+        }
+
+
+        public StatementHandle prepare(ConnectionHandle ch, String sql, long maxRowCount) {
+
+            System.out.println(new RelNodeToRDD().getRelNode(sql));
+            return super.prepare(ch,sql, maxRowCount);
         }
     }
 }
