@@ -1,0 +1,157 @@
+{
+  "fields": [
+    {
+      "fieldName": "id",
+      "fieldSchema": {
+        "fieldType": "INT32",
+        "rowSchema": null,
+        "elementSchema": null,
+        "valueScehma": null,
+        "primitiveField": true
+      },
+      "position": 0
+    },
+    {
+      "fieldName": "name",
+      "fieldSchema": {
+        "fieldType": "STRING",
+        "rowSchema": null,
+        "elementSchema": null,
+        "valueScehma": null,
+        "primitiveField": true
+      },
+      "position": 1
+    },
+    {
+      "fieldName": "companyId",
+      "fieldSchema": {
+        "fieldType": "INT32",
+        "rowSchema": null,
+        "elementSchema": null,
+        "valueScehma": null,
+        "primitiveField": true
+      },
+      "position": 2
+    },
+    {
+      "fieldName": "address",
+      "fieldSchema": {
+        "fieldType": "ROW",
+        "rowSchema": {
+          "fields": [
+            {
+              "fieldName": "zip",
+              "fieldSchema": {
+                "fieldType": "INT32",
+                "rowSchema": null,
+                "elementSchema": null,
+                "valueScehma": null,
+                "primitiveField": true
+              },
+              "position": 0
+            },
+            {
+              "fieldName": "streetnum",
+              "fieldSchema": {
+                "fieldType": "ROW",
+                "rowSchema": {
+                  "fields": [
+                    {
+                      "fieldName": "number",
+                      "fieldSchema": {
+                        "fieldType": "INT32",
+                        "rowSchema": null,
+                        "elementSchema": null,
+                        "valueScehma": null,
+                        "primitiveField": true
+                      },
+                      "position": 0
+                    }
+                  ]
+                },
+                "elementSchema": null,
+                "valueScehma": null,
+                "primitiveField": false
+              },
+              "position": 1
+            }
+          ]
+        },
+        "elementSchema": null,
+        "valueScehma": null,
+        "primitiveField": false
+      },
+      "position": 3
+    },
+    {
+      "fieldName": "selfEmployed",
+      "fieldSchema": {
+        "fieldType": "BOOLEAN",
+        "rowSchema": null,
+        "elementSchema": null,
+        "valueScehma": null,
+        "primitiveField": true
+      },
+      "position": 4
+    },
+    {
+      "fieldName": "phoneNumbers",
+      "fieldSchema": {
+        "fieldType": "ARRAY",
+        "rowSchema": null,
+        "elementSchema": {
+          "fieldType": "ROW",
+          "rowSchema": {
+            "fields": [
+              {
+                "fieldName": "kind",
+                "fieldSchema": {
+                  "fieldType": "STRING",
+                  "rowSchema": null,
+                  "elementSchema": null,
+                  "valueScehma": null,
+                  "primitiveField": true
+                },
+                "position": 0
+              },
+              {
+                "fieldName": "number",
+                "fieldSchema": {
+                  "fieldType": "STRING",
+                  "rowSchema": null,
+                  "elementSchema": null,
+                  "valueScehma": null,
+                  "primitiveField": true
+                },
+                "position": 1
+              }
+            ]
+          },
+          "elementSchema": null,
+          "valueScehma": null,
+          "primitiveField": false
+        },
+        "valueScehma": null,
+        "primitiveField": false
+      },
+      "position": 5
+    },
+    {
+      "fieldName": "mapValues",
+      "fieldSchema": {
+        "fieldType": "MAP",
+        "rowSchema": null,
+        "elementSchema": null,
+        "valueScehma": {
+          "fieldType": "ANY",
+          "rowSchema": null,
+          "elementSchema": null,
+          "valueScehma": null,
+          "primitiveField": true
+        },
+        "primitiveField": false
+      },
+      "position": 6
+    }
+  ]
+}

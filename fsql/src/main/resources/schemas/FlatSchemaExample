@@ -1,0 +1,37 @@
+{
+  "fields": [
+    {
+      "fieldName": "id",
+      "fieldSchema": {
+        "fieldType": "INT32",
+        "rowSchema": null,
+        "elementSchema": null,
+        "valueScehma": null,
+        "primitiveField": true
+      },
+      "position": 0
+    },
+    {
+      "fieldName": "name",
+      "fieldSchema": {
+        "fieldType": "STRING",
+        "rowSchema": null,
+        "elementSchema": null,
+        "valueScehma": null,
+        "primitiveField": true
+      },
+      "position": 1
+    },
+    {
+      "fieldName": "companyId",
+      "fieldSchema": {
+        "fieldType": "INT32",
+        "rowSchema": null,
+        "elementSchema": null,
+        "valueScehma": null,
+        "primitiveField": true
+      },
+      "position": 2
+    }
+  ]
+}
