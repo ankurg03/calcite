@@ -38,7 +38,6 @@ public class FileSystemSchemaProvider implements SchemaProvider {
 
         for (File file : getResourceDirFiles()) {
             String schemaName = file.getName();
-            String path = file.getPath();
             JsonNode jsonSchemaNode = JsonUtility.mapper.readTree(file);
             SQLSchema sqlSchema = JsonUtility.mapper.treeToValue(jsonSchemaNode, SQLSchema.class);
             RelDataType relationalSchema = relSchemaConverter.convertToRelSchema(sqlSchema);
@@ -71,7 +70,7 @@ public class FileSystemSchemaProvider implements SchemaProvider {
         RelRoot relNode = calciteQueryPlanner.getLogicalPlan("select ns.phoneNumbers, nm.name from  NestedExampleSchema as ns, FlatSchemaExample as nm where " +
                 "nm.name = ns.name");
         System.out.println(RelOptUtil.toString(relNode.project()));
-        calciteQueryPlanner = new CalciteQueryPlanner(sp);
+
         RelRoot relNode2 = calciteQueryPlanner.getLogicalPlan("select ns.name, sum(ns.id) from  NestedExampleSchema as ns group by (ns.name)");
         System.out.println(RelOptUtil.toString(relNode2.project()));
 /**

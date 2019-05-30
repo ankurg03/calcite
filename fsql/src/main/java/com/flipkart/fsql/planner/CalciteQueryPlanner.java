@@ -44,10 +44,12 @@ public class CalciteQueryPlanner implements IQueryPlanner {
     }
 
     @Override
-    public RelRoot getLogicalPlan(String sql) throws SqlParseException, RelConversionException, ValidationException {
+    public synchronized RelRoot getLogicalPlan(String sql) throws SqlParseException, RelConversionException, ValidationException {
         SqlNode sqlNode = planner.parse(sql);
         SqlNode validatedSql = planner.validate(sqlNode);
         RelRoot relRoot = planner.rel(validatedSql);
+        planner.close();
+        planner.reset();
         return relRoot;
     }
 
