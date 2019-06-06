@@ -12,12 +12,15 @@ import org.apache.calcite.rel.RelCollationTraitDef;
 import org.apache.calcite.rel.RelRoot;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
+import org.apache.calcite.rel.type.RelDataTypeFieldImpl;
 import org.apache.calcite.schema.SchemaPlus;
 import org.apache.calcite.schema.Table;
+import org.apache.calcite.schema.impl.AbstractSchema;
 import org.apache.calcite.schema.impl.AbstractTable;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.apache.calcite.sql.parser.SqlParser;
+import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.tools.*;
 
 import java.io.IOException;
@@ -187,6 +190,8 @@ public class TestSchemaRegistry {
             "  ]\n" +
             "}";
 
+    static String threeLevelNested = "{\"fields\":[{\"fieldName\":\"address\",\"fieldSchema\":{\"fieldType\":\"ROW\",\"rowSchema\":{\"fields\":[{\"fieldName\":\"zip\",\"fieldSchema\":{\"fieldType\":\"INT32\",\"rowSchema\":null,\"elementSchema\":null,\"valueScehma\":null,\"primitiveField\":true},\"position\":0},{\"fieldName\":\"streetnum\",\"fieldSchema\":{\"fieldType\":\"ROW\",\"rowSchema\":{\"fields\":[{\"fieldName\":\"number\",\"fieldSchema\":{\"fieldType\":\"ROW\",\"rowSchema\":{\"fields\":[{\"fieldName\":\"innernumber\",\"fieldSchema\":{\"fieldType\":\"ROW\",\"rowSchema\":{\"fields\":[{\"fieldName\":\"lowestnumber\",\"fieldSchema\":{\"fieldType\":\"INT32\",\"rowSchema\":null,\"elementSchema\":null,\"valueScehma\":null,\"primitiveField\":true},\"position\":0}]},\"elementSchema\":null,\"valueScehma\":null,\"primitiveField\":true},\"position\":0}]},\"elementSchema\":null,\"valueScehma\":null,\"primitiveField\":true},\"position\":0}]},\"elementSchema\":null,\"valueScehma\":null,\"primitiveField\":false},\"position\":1}]},\"elementSchema\":null,\"valueScehma\":null,\"primitiveField\":false},\"position\":0}]}";
+
 
     private static Table createTableFromRelSchema(RelDataType relationalSchema) {
         return new AbstractTable() {
@@ -198,18 +203,31 @@ public class TestSchemaRegistry {
 
     public static void main(String[] args) throws IOException, SQLException, ValidationException, RelConversionException, SqlParseException {
         ObjectMapper objectMapper = new ObjectMapper();
-//        SQLSchema sqlSchema = objectMapper.readValue(SCHEMA, SQLSchema.class);
-        JsonNode node = objectMapper.readTree(SCHEMA);
+        System.out.println(threeLevelNested);
+
+        JsonNode node = objectMapper.readTree(threeLevelNested);
+
+
         SQLSchema sqlSchema = objectMapper.treeToValue(node, SQLSchema.class);
+
+
         RelSchemaConverter relSchemaConverter = new RelSchemaConverter();
         RelDataType relationalSchema = relSchemaConverter.convertToRelSchema(sqlSchema);
+
+
+
 
         Connection connection = DriverManager.getConnection("jdbc:calcite:");
         CalciteConnection calciteConnection = connection.unwrap(CalciteConnection.class);
         SchemaPlus rootSchema = calciteConnection.getRootSchema();
 
-       // System.out.println(relationalSchema);
-        rootSchema.add("test", createTableFromRelSchema(relationalSchema));
+        System.out.println(relationalSchema);
+
+        rootSchema.add("empDb", new AbstractSchema());
+
+        rootSchema.getSubSchema("empDb").add("employInfo", createTableFromRelSchema(relationalSchema));
+
+//        rootSchema.getSubSchema("empDb").getSubSchema("employInfo").add("address", createTableFromRelSchema(addrrelationalSchema));
 
         final List<RelTraitDef> traitDefs = new ArrayList<>();
 
@@ -225,7 +243,13 @@ public class TestSchemaRegistry {
                 .build();
         Planner planner = Frameworks.getPlanner(frameworkConfig);
 
-        SqlNode sql = planner.parse("select id from test");
+        System.out.println("test....");
+        /**
+         * query for SCHEMA
+         * SqlNode sql = planner.parse("select * from empDb.employInfo e, empDb.employInfo es where e.address.zip=es.address.streetnum.number");
+         **/
+        SqlNode sql = planner.parse("select * from empDb.employInfo e, empDb.employInfo es where e.address.zip=es.address.streetnum.number.innernumber.lowestnumber");
+
         SqlNode validatedSql = planner.validate(sql);
         RelRoot relRoot = planner.rel(validatedSql);
         System.out.println(RelOptUtil.toString(relRoot.project()));

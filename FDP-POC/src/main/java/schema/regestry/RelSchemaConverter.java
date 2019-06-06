@@ -61,8 +61,17 @@ public class RelSchemaConverter extends SqlTypeFactoryImpl {
             case INT64:
                 return createTypeWithNullability(createSqlType(SqlTypeName.BIGINT), true);
             case ROW:
+                ArrayList<RelDataType> relDataTypes = new ArrayList<>();
+                ArrayList<String> relNames = new ArrayList<>();
+
+                for (SQLSchema.SqlField field : fieldSchema.getRowSchema().getFields()) {
+                    String fieldName = field.getFieldName();
+                    RelDataType dataType = getRelDataType(field.getFieldSchema());
+                    relDataTypes.add(dataType);
+                    relNames.add(fieldName);
+                }
+                return createStructType(relDataTypes, relNames);
             case ANY:
-                // TODO Calcite execution engine doesn't support record type yet.
                 return createTypeWithNullability(createSqlType(SqlTypeName.ANY), true);
             case MAP:
                 RelDataType valueType = getRelDataType(fieldSchema.getValueScehma());

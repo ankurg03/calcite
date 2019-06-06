@@ -60,6 +60,15 @@ public class RelSchemaConverter extends SqlTypeFactoryImpl {
             case INT64:
                 return createTypeWithNullability(createSqlType(SqlTypeName.BIGINT), true);
             case ROW:
+                ArrayList<RelDataType> relDataTypes = new ArrayList<>();
+                ArrayList<String> relNames = new ArrayList<>();
+                for (SQLSchema.SqlField field : fieldSchema.getRowSchema().getFields()) {
+                    String fieldName = field.getFieldName();
+                    RelDataType dataType = getRelDataType(field.getFieldSchema());
+                    relDataTypes.add(dataType);
+                    relNames.add(fieldName);
+                }
+                return createStructType(relDataTypes, relNames);
             case ANY:
                 return createTypeWithNullability(createSqlType(SqlTypeName.ANY), true);
             case MAP:
@@ -68,7 +77,6 @@ public class RelSchemaConverter extends SqlTypeFactoryImpl {
                         createTypeWithNullability(valueType, true));
             default:
                 String msg = String.format("Field Type %s is not supported", fieldSchema.getFieldType());
-//                log.error(msg);
                 throw new RuntimeException(msg);
         }
     }

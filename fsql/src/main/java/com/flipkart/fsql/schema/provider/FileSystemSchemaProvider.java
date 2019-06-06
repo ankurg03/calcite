@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.flipkart.fsql.JsonUtility;
 import com.flipkart.fsql.planner.CalciteQueryPlanner;
 import com.flipkart.fsql.schema.model.SQLSchema;
+import com.flipkart.fsql.schema.model.SqlFieldSchema;
 import org.apache.calcite.jdbc.CalciteConnection;
 import org.apache.calcite.plan.RelOptUtil;
 import org.apache.calcite.rel.RelRoot;
@@ -17,6 +18,9 @@ import java.io.File;
 import java.net.URL;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.stream.Collectors;
 
 public class FileSystemSchemaProvider implements SchemaProvider {
 
@@ -40,7 +44,16 @@ public class FileSystemSchemaProvider implements SchemaProvider {
             String schemaName = file.getName();
             JsonNode jsonSchemaNode = JsonUtility.mapper.readTree(file);
             SQLSchema sqlSchema = JsonUtility.mapper.treeToValue(jsonSchemaNode, SQLSchema.class);
-            RelDataType relationalSchema = relSchemaConverter.convertToRelSchema(sqlSchema);
+            List<String> fieldNames = new ArrayList<>();
+            List<SqlFieldSchema> fieldTypes = new ArrayList<>();
+            fieldNames.addAll(
+                    sqlSchema.getFields().stream().map(SQLSchema.SqlField::getFieldName).collect(Collectors.toList()));
+            fieldTypes.addAll(
+                    sqlSchema.getFields().stream().map(SQLSchema.SqlField::getFieldSchema).collect(Collectors.toList()));
+
+            SQLSchema newSchema = new SQLSchema(fieldNames, fieldTypes);
+
+            RelDataType relationalSchema = relSchemaConverter.convertToRelSchema(newSchema);
             System.out.println(relationalSchema);
             rootSchema.add(schemaName, createTableFromRelSchema(relationalSchema));
         }
